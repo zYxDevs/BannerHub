@@ -3,9 +3,12 @@
 </p>
 
 # BannerHub
-[![Discord](https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white)](https://discord.gg/n8S4G2WZQ4)
-[![Downloads](https://img.shields.io/github/downloads/The412Banner/BannerHub/total.svg?logo=github&label=Downloads&color=blue)](https://github.com/The412Banner/BannerHub/releases)
-[![Latest Release Downloads](https://img.shields.io/github/downloads/The412Banner/BannerHub/latest/total.svg?logo=github&label=Latest%20Release&color=brightgreen)](https://github.com/The412Banner/BannerHub/releases/latest)
+
+<p align="center">
+  <a href="https://discord.gg/n8S4G2WZQ4"><img src="https://img.shields.io/badge/Discord-Join%20Server-5865F2?logo=discord&logoColor=white&style=for-the-badge" alt="Join the The412Banner Discord"/></a>
+  <a href="https://github.com/The412Banner/BannerHub/releases"><img src="https://img.shields.io/github/downloads/The412Banner/BannerHub/total.svg?logo=github&label=Downloads&color=blue&style=for-the-badge" alt="Total downloads"/></a>
+  <a href="https://github.com/The412Banner/BannerHub/releases/latest"><img src="https://img.shields.io/github/downloads/The412Banner/BannerHub/latest/total.svg?logo=github&label=Latest%20Release&color=brightgreen&style=for-the-badge" alt="Latest release downloads"/></a>
+</p>
 
 <p align="center">
   <a href="https://github.com/The412Banner/BannerHub/releases/latest"><strong>📥 Latest stable: v3.7.2</strong></a>
