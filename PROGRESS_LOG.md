@@ -27,12 +27,16 @@ This is what gives x86_64 Wine containers sustained rumble for the first time (t
 #### Branch cleanup
 `fix/evshim-box64-guard` (single commit `79c859772`, the superseded in-shim `EM_X86_64` guard — crash stops but no Box64 rumble; never merged) **deleted** from origin + local at user's instruction. Unmergeable anyway since the preload-free branch deletes the `evshim.c` it patched. SHA recorded in memory as a historical pointer only.
 
-#### Test plan (device — IN PROGRESS 2026-05-16)
-Artifact downloaded to `/storage/emulated/0/Download/bh-vib-pf/BannerHub-fix-vibration-preload-free-Normal.apk` (~138 MB; "Normal" is build-quick's label, manifest patched to `com.tencent.ig` PuBG). User installed and is launching **Dead Cells on the x86-64/Box64 PuBG container** multiple times.
-- **Expected:** game launches (no ~60s Box64 spin / wine death) **and** rumbles, including sustained holds past ~1s on x86_64.
-- Re-launch should be identical (disk-patch is AtomicBoolean-gated + idempotent — skips already-patched winebus.so).
-- If rumble missing on this Proton: check for `winebus_dump_x86_64.so` (pattern miss; launch still fine; refine byte pattern from dump).
-- **Result pending.** If pass → candidate for stable promotion. If fail → triage via `getlog com.tencent.ig` (`evshim`/wine signals) + dump.
+#### Device verification — ✅ CONFIRMED 2026-05-16
+Artifact `/storage/emulated/0/Download/bh-vib-pf/BannerHub-fix-vibration-preload-free-Normal.apk` (~138 MB; "Normal" is build-quick's label, manifest patched to `com.tencent.ig` PuBG). Installed; multiple titles launched fine:
+
+| Game | gameId | Container | Path | Result |
+|---|---|---|---|---|
+| Dead Cells | 10417 | `proton10.0-x64-1` | Box64-0.4.1-2 "Extreme" (`isArm64X=false`) | ✅ fine |
+| ULTRAKILL | 72090 | `proton9.0-x64-3` | Box64-0.4.1-2 "Extreme" (`isArm64X=false`) | ✅ fine |
+| DOOMBLADE | 63362 | `proton10.0-arm64x-2` | FEX (`isArm64X=true`) | ✅ fine (FEX negative control — no collateral regression) |
+
+Two **distinct** x86_64/Box64-"Extreme" titles (the exact regression config: x86_64 Proton + Box64-0.4.1-2 + `strongMem=0,weakBarrier=0,bigBlock=2`) launch cleanly where v3.7.0 spun box64 ~60s then `:wine has died`. Corroboration via root logcat-bridge: `.bh_winedevice_ready` rewritten per launch (delayed post-env-builder write **completing** = box64 lived past the old ~5s kill window; latest 10:40 `pid=31069`); **no** `winebus_dump_x86_64.so` anywhere (x86_64 winebus pattern matched on both proton9 & proton10 x64 winebus.so); zero crash/SIGSEGV/wine-died in any log (only the known broken-diag-HAL tombstone noise, never the cause). Rumble-feel/sustained-hold not yet log-verified (games reported running fine). **Ready for stable promotion on user's go** (per stable-release checklist + pre-release policy).
 
 ---
 
