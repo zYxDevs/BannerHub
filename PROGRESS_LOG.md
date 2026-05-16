@@ -4,6 +4,38 @@ Tracks every commit, patch, and change applied to the GameHub 5.3.5 ReVanced APK
 
 ---
 
+### [branch / pre-release] — Vibration preload-free + x86-64/Box64 launch-death fix (2026-05-16)
+**Branch:** `fix/vibration-preload-free` (off `main`, NOT merged)  |  **Commits:** `c17e6a975` (original preload-free port), `b4e725570` (CI sed fix), `2e7009403` (adopt TideGear PR #91 controller)  |  **Build:** build-quick.yml CI run [25964048570](https://github.com/The412Banner/BannerHub/actions/runs/25964048570) ✅ — artifact-only (no GH release per pre-release policy)
+
+#### Headline
+Fixes the v3.7.0 vibration regression that killed **every x86-64 / Box64 game launch** (Dead Cells the repro, PuBG variant `com.tencent.ig`, Proton 10 x64 + Box64-0.4.1-2 "Extreme"). v3.7.0's rumble feature LD_PRELOAD'd `libevshim.so` into Wine; on Box64 its in-memory winebus patcher corrupted the dynarec → ~60s CPU spin → `com.tencent.ig:wine has died`. arm64x+FEX containers were never affected.
+
+#### Fix architecture (preload-free)
+Removes `libevshim.so` / LD_PRELOAD entirely — nothing extra is mapped into Wine, so the crash class is eliminated. `BhVibrationController.ensureWinebusDurationPatchOnce(Context)` (called via smali `invoke-static` at the `EnvironmentController.b` LD_PRELOAD anchor) scans the files tree and patches every `winebus.so` on disk so SDL2's ~1s rumble auto-expiry never fires:
+- **aarch64-unix:** `ldur w3,[x29,#-0x14]; blr x8` → `mov w3,#-1; blr x8`
+- **x86_64-unix (Box64):** wildcarded 11-byte call-site (`mov ecx,[rbp+disp8]; movzwl si; movzwl dx; call *rax`); the 3-byte duration load → `or ecx,-1` (`83 C9 FF`) → duration `0xFFFFFFFF`. `movzwl` pair discriminates vs the rumble-*stop* sites so those are untouched.
+- **Fail-safe:** on a pattern miss the binary is *dumped* to `<externalFilesDir>/winebus_dump_x86_64.so`, never corrupted — worst case is no sustained rumble on that Proton, never a broken launch.
+
+This is what gives x86_64 Wine containers sustained rumble for the first time (the old libevshim path was aarch64-only — x86_64 Wine silently rejected the arm64 .so, so SDL's 1s expiry fired).
+
+#### What was applied from TideGear PR #91
+[The412Banner/BannerHub#91](https://github.com/The412Banner/BannerHub/pull/91) "Make Vibration Fix Compatible With x86_64 Containers" — the canonical, self-contained successor to the original port. `extension/BhVibrationController.java` replaced **byte-for-byte** with PR #91's (commit `2e7009403`). All 5 smali injection signatures verified identical (`onRumble(III)Z`, `dispatchToController(III)Z`, `onStop(I)V`, `scheduleWakeup(Ljava/lang/Object;I)V`, `ensureWinebusDurationPatchOnce(Landroid/content/Context;)V`), pkg `com.xj.winemu.vibration` — wire-compatible with existing injection points. Removed dead `scripts/patch_winebus_rumble_duration.py` (patcher is now fully in Java) and unreferenced `native/evshim/`. **Workflows deliberately NOT taken from PR #91** — its head is TideGear's stale fork-main; wholesale adoption would clobber unrelated GOG/FrameGen patch steps and reintroduce a `/`-delimiter sed bug. Our branch's workflows already implement PR #91's exact preload-free mechanism off current `main`.
+
+#### CI bug fixed (`b4e725570`)
+`build.yml` "Inject BH_VERSION" step used `/` as the `sed` delimiter — broke on any branch name containing `/` (`sed: unknown option to 's'`), which is why the prior full build failed. Switched to `|` (build-quick.yml already correct). Pre-existing, unrelated to vibration.
+
+#### Branch cleanup
+`fix/evshim-box64-guard` (single commit `79c859772`, the superseded in-shim `EM_X86_64` guard — crash stops but no Box64 rumble; never merged) **deleted** from origin + local at user's instruction. Unmergeable anyway since the preload-free branch deletes the `evshim.c` it patched. SHA recorded in memory as a historical pointer only.
+
+#### Test plan (device — IN PROGRESS 2026-05-16)
+Artifact downloaded to `/storage/emulated/0/Download/bh-vib-pf/BannerHub-fix-vibration-preload-free-Normal.apk` (~138 MB; "Normal" is build-quick's label, manifest patched to `com.tencent.ig` PuBG). User installed and is launching **Dead Cells on the x86-64/Box64 PuBG container** multiple times.
+- **Expected:** game launches (no ~60s Box64 spin / wine death) **and** rumbles, including sustained holds past ~1s on x86_64.
+- Re-launch should be identical (disk-patch is AtomicBoolean-gated + idempotent — skips already-patched winebus.so).
+- If rumble missing on this Proton: check for `winebus_dump_x86_64.so` (pattern miss; launch still fine; refine byte pattern from dump).
+- **Result pending.** If pass → candidate for stable promotion. If fail → triage via `getlog com.tencent.ig` (`evshim`/wine signals) + dump.
+
+---
+
 ### [stable] — v3.7.2 — Hotfix: stub launch-time auto-update dialog (2026-05-12)
 **Tag:** `v3.7.2`  |  **Build:** `build.yml` triggered on stable tag, head of `main` after merge of `feature/stub-launch-upgrade-dialog` (`3575b15`)  |  **Branches merged:** `feature/stub-launch-upgrade-dialog` (merge `543c2d0` into main, 2026-05-12)  |  **Release:** auto-published by build.yml
 
