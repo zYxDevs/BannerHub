@@ -700,7 +700,8 @@ jobs:
       - name: Inject BH_VERSION into extension
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          sed -i "s/static final String BH_VERSION = \"[^\"]*\"/static final String BH_VERSION = \"$VERSION\"/" extension/BhSettingsExporter.java
+          # Use | as sed delimiter so branch names containing / (e.g. fix/foo) don't break the s/// expression.
+          sed -i "s|static final String BH_VERSION = \"[^\"]*\"|static final String BH_VERSION = \"$VERSION\"|" extension/BhSettingsExporter.java
           echo "BH_VERSION -> $VERSION"
 
       - name: Compile and inject GOG extension dex
