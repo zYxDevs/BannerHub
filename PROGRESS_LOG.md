@@ -45,6 +45,16 @@ Anchor: the 3-instruction sequence inside `SetupTaskFactory.g()` (`invoke-virtua
 
 Downstream tasks in `SetupTaskFactory.g()` (PC-game setup list) after SetGameRecommConfigTask are: `ImageFsInstallTask`, `ContainerInstallTask`, `ComponentsInstallTask`, `DependencyInstallTask`. These are install-from-disk tasks — each should short-circuit when its target is already present (which it must be, since the game launched online before). If pre2 surfaces a third failure, we patch that task next; the pattern is the same.
 
+### Iteration 2: pre3 device test → `DependencyInstallTask` also fails offline → pre4 fix
+
+Pre3 (with both `GameConfigDownloadTask`-skip and the factory-level `SetGameRecommConfigTask`-skip) cleared the first two failure modes — but `DependencyInstallTask` now toasts `Task 'Install Dependencies' failed`. So tasks 2-4 (`ImageFsInstallTask`, `ContainerInstallTask`, `ComponentsInstallTask`) did short-circuit on disk-present as predicted, but `DependencyInstallTask` does not.
+
+`DependencyInstallTask`'s main class lives in `smali_classes9` (reassembled, so a direct task-level patch would also be feasible), but for consistency with the SetGameRecommConfigTask fix and to avoid touching another file, the pre4 patch wraps the factory's `c()` call + `List.add` in the same `NetworkUtils.r()` skip-add idiom inside `SetupTaskFactory.g()`. Same anchor pattern (3-instruction block: invoke-virtual `c()` + `move-result-object p0` + `invoke-interface List.add(v0, p0)`), same `v2` scratch register, +6 lines per workflow. Local dry-run confirms anchor matches and diff is exactly 6 added lines.
+
+After pre4, `SetupTaskFactory.g()` offline emits a list with just `ImageFsInstallTask` + `ContainerInstallTask` + `ComponentsInstallTask` — all three short-circuit on disk-present, so the list completes successfully and Wine boots. There is no task 6 in the list.
+
+Caveat: if any dependency was newly added by a server-pushed recommendation (which would have required an online launch to apply), it'll be missing offline. But for the steady-state case (game launched online at least once, no settings changed since), all deps are on disk and skipping is a no-op.
+
 ### Status (post-iter)
 
 - Branch HEAD will be updated post-commit.
