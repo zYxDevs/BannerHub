@@ -5,7 +5,11 @@ Tracks every commit, patch, and change applied to the GameHub 5.3.5 ReVanced APK
 ---
 
 ### [v3.7.5] — STABLE: offline launch for imported PC games (2026-05-20)
-**Tag:** `v3.7.5` — clean stable tag → `build.yml` push trigger → all 9 variants + auto-published GitHub Release  |  **Tag commit:** `2301cb585` (merge of `fix/offline-launch-imported-games` into main, device-verified on GTA V)
+**Tag:** `v3.7.5` at commit `caeaa9948` (docs prep on top of merge `2301cb585` = `fix/offline-launch-imported-games` --no-ff into main) → `build.yml` push trigger → all 9 variants + auto-published GitHub Release.
+
+**Build:** [run 26200467811](https://github.com/The412Banner/BannerHub/actions/runs/26200467811) ✅ — prepare + 9 variant builds + release all green.
+
+**Release:** https://github.com/The412Banner/BannerHub/releases/tag/v3.7.5 — `isPrerelease=false`, marked latest, 9 APK assets (AnTuTu, alt-AnTuTu, Genshin, Ludashi, Normal, Normal.GHL, Original, PuBG, PuBG-CrossFire). Release body uploaded from `release_notes_v3.7.5.md` via `gh release edit --notes-file ... --latest`.
 
 #### What ships
 With device in airplane mode (or any no-network state), launching any previously-online-launched imported PC game now succeeds — Wine boots from on-disk components/container and the game runs. Pre-3.7.5 the launch aborted at the first setup task with a `Game configuration file download failed` toast. The fix gates three of the five PC-emu setup tasks on `NetworkUtils.r()`: when offline, `GameConfigDownloadTask` early-returns Unit; `SetGameRecommConfigTask` and `DependencyInstallTask` are omitted from the launch task list by `SetupTaskFactory.g()`. The remaining three tasks (`ImageFsInstallTask`, `ContainerInstallTask`, `ComponentsInstallTask`) already short-circuit on disk-present, so the offline task list completes successfully from cache. Steam library games' offline behavior is unchanged (they already had a partial offline bypass in `SteamGameByPcEmuLaunchStrategy$execute$3.smali`); this fix complements it for the other four `InstalledGameSource` variants (`PcGameHubMgrImport`, `LocalImport`, `GameHubSvrDownload`, `UnKnow`).
