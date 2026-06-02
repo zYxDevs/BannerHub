@@ -700,11 +700,32 @@ When Steam auto-login fails at cold start with no network, BannerHub detects the
 
 | Setting | What it does |
 |---------|-------------|
-| **EmuReady API** | Toggle EmuReady compatibility checks |
+| **Compatibility API Source** | Choose which backend serves the component/compatibility catalog — **GameHub** (official), **EmuReady**, or **BannerHub**. Opens a 3-option picker. See [Compatibility API Source](#compatibility-api-source-gamehub--emuready--bannerhub) below for what each offers |
 | **CPU Usage Display** | Show/hide CPU usage overlay during gameplay |
 | **Performance Metrics** | Show/hide full performance metrics overlay |
 | **Sustained Performance Mode** | Same toggle as the Performance sidebar — available here for convenience outside a running game |
 | **Grant Root Access** | Opens a warning dialog, then runs `su -c id` on a background thread and stores the result. Performance sidebar reads this pref to enable or grey out the root-dependent toggles — no unsolicited root popup on sidebar open |
+
+---
+
+### Compatibility API Source (GameHub / EmuReady / BannerHub)
+
+BannerHub can pull its **component catalog** (DXVK, VKD3D, Box64, FEXCore, GPU drivers, containers, compatibility data) from one of three backends. The selector lives in **Settings → Advanced → Compatibility API Source** and opens a dialog with three options. Picking one saves it, clears the cached component + token data, and shows a toast — **restart the app to refresh components against the new source.**
+
+| Option | Endpoint | Auth | What it offers |
+|--------|----------|------|----------------|
+| **GameHub** *(default)* | XiaoJi's official feed | Your normal app token / login | The stock, unmodified catalog served by XiaoJi upstream. This is what an un-switched install uses. Requires the normal account/login flow. |
+| **EmuReady** | `gamehub-lite-api.emuready.workers.dev` | `fake-token` (no login) | A **third-party**, community-run catalog worker maintained alongside the [gamehub-lite](https://github.com/Producdevity/gamehub-lite) project. Not operated by BannerHub. Selecting it bypasses login. |
+| **BannerHub** | `bannerhub-api.the412banner.workers.dev` | Service token (auto-fetched, 4 h cache) | BannerHub's own curated catalog — hand-picked DXVK/VKD3D/Box64/FEXCore/driver builds and containers, with fallback to the upstream feed for anything not curated. Selecting it bypasses login. |
+
+**How it behaves**
+
+- **Default is GameHub (`0`).** Fresh installs boot on the official source until you change it.
+- **Switching is sticky and cache-aware.** The choice is stored in `SharedPreferences` (`api_source`); a separate `last_api_source` key lets the app detect a change across restarts and clear stale component/token caches automatically.
+- **The two external sources (EmuReady, BannerHub) bypass login** and force-enable Steam Input — that's what lets you browse and install components without a XiaoJi account. The official GameHub source does not bypass login.
+- **A restart is recommended after switching** so every in-app list re-queries the newly selected backend (the toast says as much).
+
+> **Note:** EmuReady is a separate third-party service — BannerHub neither hosts nor controls its catalog. Use the **BannerHub** option for the catalog curated by this project, or **GameHub** for the stock upstream feed.
 
 ---
 
