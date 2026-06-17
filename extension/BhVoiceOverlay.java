@@ -130,8 +130,8 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.setGravity(Gravity.CENTER_VERTICAL);
 
+        buildPill();   // must precede buildPanel() — renderIdle() tints the pill
         buildPanel();
-        buildPill();
         panel.setVisibility(View.GONE);
         container.addView(panel);
         container.addView(pill);
@@ -174,8 +174,9 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     }
 
     private void refreshPillTint() {
-        GradientDrawable bg = (GradientDrawable) pill.getBackground();
-        bg.setColor(inCall ? 0xF22E7D32 : COL_PILL);
+        if (pill == null) return;
+        android.graphics.drawable.Drawable bg = pill.getBackground();
+        if (bg instanceof GradientDrawable) ((GradientDrawable) bg).setColor(inCall ? 0xF22E7D32 : COL_PILL);
     }
 
     // ── panel ────────────────────────────────────────────────────────────────
