@@ -88,9 +88,8 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     private final String clientId;
 
     private ViewGroup decor;          // the activity DecorView we attach into
-    private LinearLayout container;   // [panel][pill]
-    private TextView pill;
-    private LinearLayout panel;
+    private TextView pill;            // stays pinned to the right edge
+    private LinearLayout panel;       // the box — drags independently of the pill
     private boolean panelOpen;
     private boolean attached;
     private int opacityPct;            // 20–100; applied to the whole overlay
@@ -131,27 +130,33 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         decor = win != null ? (ViewGroup) win.getDecorView() : null;
         if (decor == null) { Log.w(TAG, "voice pill: no decor view"); return; }
 
-        container = new LinearLayout(act);
-        container.setOrientation(LinearLayout.HORIZONTAL);
-        container.setGravity(Gravity.CENTER_VERTICAL);
-
         buildPill();   // must precede buildPanel() — renderIdle() tints the pill
         buildPanel();
         panel.setVisibility(View.GONE);
-        container.addView(panel);
-        container.addView(pill);
 
-        FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(
+        // The pill is pinned to the right edge (vertical drag only).
+        int pillY = BhVoicePrefs.getPillY(act, dp(180));
+        FrameLayout.LayoutParams pillLp = new FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        flp.gravity = Gravity.TOP | Gravity.END;
-        flp.topMargin = BhVoicePrefs.getPillY(act, dp(180));
-        flp.rightMargin = BhVoicePrefs.getPillX(act, 0);
-        container.setLayoutParams(flp);
+        pillLp.gravity = Gravity.TOP | Gravity.END;
+        pillLp.topMargin = pillY;
+        pill.setLayoutParams(pillLp);
+
+        // The box is a separate view that drags freely; default position is just
+        // left of the pill, at the pill's height.
+        FrameLayout.LayoutParams panelLp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        panelLp.gravity = Gravity.TOP | Gravity.END;
+        panelLp.topMargin = BhVoicePrefs.getBoxY(act, pillY);
+        panelLp.rightMargin = BhVoicePrefs.getBoxX(act, dp(56));
+        panel.setLayoutParams(panelLp);
+
         try {
-            decor.addView(container);
+            decor.addView(pill);
+            decor.addView(panel);   // added after the pill → box sits above it
             attached = true;
             applyOpacity();
-            Log.i(TAG, "voice pill attached to decor (y=" + flp.topMargin + ")");
+            Log.i(TAG, "voice pill attached to decor (y=" + pillY + ")");
         } catch (Throwable t) {
             Log.w(TAG, "voice pill addView(decor) failed", t);
         }
@@ -159,10 +164,9 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
 
     private static int clampOpacity(int p) { return p < 20 ? 20 : (p > 100 ? 100 : p); }
 
+    /** Opacity fades only the always-on-screen pill; the box stays fully opaque. */
     private void applyOpacity() {
-        // Full opacity while the panel is open (so controls stay usable); the
-        // chosen fade applies to the collapsed pill during gameplay.
-        if (container != null) container.setAlpha(panelOpen ? 1f : clampOpacity(opacityPct) / 100f);
+        if (pill != null) pill.setAlpha(clampOpacity(opacityPct) / 100f);
     }
 
     /** Collapsible opacity control: a tappable toggle that reveals a slider. */
@@ -203,8 +207,9 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
 
     private void cleanup() {
         if (controller != null) { try { controller.hangup(); } catch (Throwable ignored) {} controller = null; }
-        if (attached && decor != null && container != null) {
-            try { decor.removeView(container); } catch (Throwable ignored) {}
+        if (attached && decor != null) {
+            try { if (panel != null) decor.removeView(panel); } catch (Throwable ignored) {}
+            try { if (pill != null) decor.removeView(pill); } catch (Throwable ignored) {}
         }
         attached = false;
     }
@@ -493,7 +498,6 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     private void togglePanel() {
         panelOpen = !panelOpen;
         panel.setVisibility(panelOpen ? View.VISIBLE : View.GONE);
-        applyOpacity();   // fade the collapsed pill; full while open
     }
 
     private void setStatus(String msg) {
@@ -557,16 +561,16 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         try { return java.net.URLEncoder.encode(s == null ? "" : s, "UTF-8"); } catch (Throwable t) { return s; }
     }
 
-    // Drag the pill vertically along the right edge; a tap toggles the panel.
-    // Drag the whole box around the screen via the header (2D). Stays anchored to
-    // the top-right; topMargin = Y, rightMargin = distance from right edge.
+    // Drag the box around the screen via its header (2D). Independent of the pill,
+    // which stays pinned to the right edge. Anchored top-right: topMargin = Y,
+    // rightMargin = distance from the right edge.
     private final class PanelDrag implements View.OnTouchListener {
         private float startRawX, startRawY;
         private int startTop, startRight;
         private boolean dragged;
 
         @Override public boolean onTouch(View v, MotionEvent e) {
-            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) container.getLayoutParams();
+            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) panel.getLayoutParams();
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     startRawX = e.getRawX();
@@ -581,12 +585,12 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
                     if (Math.abs(dx) > dp(4) || Math.abs(dy) > dp(4)) dragged = true;
                     flp.topMargin = Math.max(0, startTop + dy);
                     flp.rightMargin = Math.max(0, startRight - dx); // drag right → toward edge
-                    container.setLayoutParams(flp);
+                    panel.setLayoutParams(flp);
                     return true;
                 case MotionEvent.ACTION_UP:
                     if (dragged) {
-                        BhVoicePrefs.setPillY(act, flp.topMargin);
-                        BhVoicePrefs.setPillX(act, flp.rightMargin);
+                        BhVoicePrefs.setBoxY(act, flp.topMargin);
+                        BhVoicePrefs.setBoxX(act, flp.rightMargin);
                     }
                     return true;
                 default:
@@ -595,13 +599,15 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         }
     }
 
+    // The pill stays pinned to the right edge — vertical drag only; a tap toggles
+    // the box.
     private final class PillTouch implements View.OnTouchListener {
         private float startRawY;
         private int startMargin;
         private boolean dragged;
 
         @Override public boolean onTouch(View v, MotionEvent e) {
-            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) container.getLayoutParams();
+            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) pill.getLayoutParams();
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     startRawY = e.getRawY();
@@ -612,7 +618,7 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
                     int dy = (int) (e.getRawY() - startRawY);
                     if (Math.abs(dy) > dp(6)) dragged = true;
                     flp.topMargin = Math.max(0, startMargin + dy);
-                    container.setLayoutParams(flp);
+                    pill.setLayoutParams(flp);
                     return true;
                 case MotionEvent.ACTION_UP:
                     if (dragged) {

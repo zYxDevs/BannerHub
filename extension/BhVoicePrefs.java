@@ -38,7 +38,8 @@ public final class BhVoicePrefs {
     private static final String KEY_CLIENT  = "voice_client_id";
     private static final String KEY_ENABLED = "voice_pill_enabled";
     private static final String KEY_PILL_Y  = "voice_pill_y";
-    private static final String KEY_PILL_X  = "voice_pill_x";
+    private static final String KEY_BOX_X   = "voice_box_x";
+    private static final String KEY_BOX_Y   = "voice_box_y";
     private static final String KEY_OPACITY = "voice_pill_opacity";
 
     /** bannerhub-api worker base — same worker that powers v6 voice. */
@@ -142,8 +143,10 @@ public final class BhVoicePrefs {
 
     public static int getPillY(Context ctx, int def) { return getInt(ctx, KEY_PILL_Y, def); }
     public static void setPillY(Context ctx, int y) { setInt(ctx, KEY_PILL_Y, y); }
-    public static int getPillX(Context ctx, int def) { return getInt(ctx, KEY_PILL_X, def); }
-    public static void setPillX(Context ctx, int x) { setInt(ctx, KEY_PILL_X, x); }
+    public static int getBoxX(Context ctx, int def) { return getInt(ctx, KEY_BOX_X, def); }
+    public static void setBoxX(Context ctx, int x) { setInt(ctx, KEY_BOX_X, x); }
+    public static int getBoxY(Context ctx, int def) { return getInt(ctx, KEY_BOX_Y, def); }
+    public static void setBoxY(Context ctx, int y) { setInt(ctx, KEY_BOX_Y, y); }
     /** Pill/box opacity 20–100 (%), default 92. */
     public static int getOpacity(Context ctx) { return getInt(ctx, KEY_OPACITY, 92); }
     public static void setOpacity(Context ctx, int pct) { setInt(ctx, KEY_OPACITY, pct); }
