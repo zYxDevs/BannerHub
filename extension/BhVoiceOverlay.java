@@ -101,8 +101,9 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     private boolean inCall;         // in a room (box shown), peer may not be connected yet
     private boolean callConnected;  // at least one peer connected → live call + timer
     private boolean muted;
-    private boolean timerStarted;
-    private final List<String> roster = new ArrayList<>();
+    private long callBase;          // SystemClock.elapsedRealtime() when the call connected
+    private final List<String> roster = new ArrayList<>();      // display names
+    private final List<String> rosterIds = new ArrayList<>();   // raw ids (parallel source)
     private final java.util.Map<String, String> peerNames = new java.util.HashMap<>();
 
     // call-view widgets (rebuilt on render)
@@ -336,7 +337,9 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
             timer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
             timer.setTypeface(Typeface.MONOSPACE);
             timer.setPadding(0, dp(4), 0, dp(8));
-            if (!timerStarted) { timerStarted = true; timer.setBase(SystemClock.elapsedRealtime()); }
+            // Always anchor to the fixed call start time so re-renders (opacity
+            // toggle, roster updates) don't reset the elapsed counter.
+            timer.setBase(callBase != 0 ? callBase : SystemClock.elapsedRealtime());
             timer.start();
             panel.addView(timer);
         }
@@ -388,7 +391,7 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
             return;
         }
         roomCode = code;
-        timerStarted = false;
+        callBase = 0;
         callConnected = false;
         muted = false;
         roster.clear();
@@ -402,7 +405,7 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         if (controller != null) { try { controller.hangup(); } catch (Throwable ignored) {} controller = null; }
         inCall = false;
         callConnected = false;
-        timerStarted = false;
+        callBase = 0;
         renderIdle();
         setStatus("Call ended.");
     }
@@ -435,15 +438,19 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         act.runOnUiThread(new Runnable() { public void run() {
             if ("in-call".equals(state)) {
                 // a peer connected → upgrade the waiting box to a live call
-                if (!callConnected) { callConnected = true; renderConnected(); }
+                if (!callConnected) {
+                    callConnected = true;
+                    callBase = SystemClock.elapsedRealtime();   // fix the timer's start once
+                    renderConnected();
+                }
             } else if ("connecting".equals(state) || "calling".equals(state)) {
                 // the waiting box is already shown by startCall; nothing to do
             } else if ("external".equals(state)) {
-                inCall = false; callConnected = false; controller = null;
+                inCall = false; callConnected = false; callBase = 0; controller = null;
                 renderIdle();
                 setStatus("Voice opened in your browser (update Android System WebView for in-app calls).");
             } else if ("ended".equals(state) || "failed".equals(state)) {
-                inCall = false; callConnected = false; controller = null; timerStarted = false;
+                inCall = false; callConnected = false; callBase = 0; controller = null;
                 renderIdle();
                 setStatus(detail == null || detail.isEmpty() ? "Call ended." : "Call ended: " + detail);
             }
@@ -452,42 +459,59 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
 
     @Override public void onVoiceRoster(final String idsCsv) {
         act.runOnUiThread(new Runnable() { public void run() {
-            roster.clear();
+            rosterIds.clear();
             if (idsCsv != null && !idsCsv.isEmpty()) {
                 for (String id : idsCsv.split(",")) {
-                    if (id.isEmpty()) continue;
-                    if (id.equals(clientId)) {
-                        roster.add((nickname == null || nickname.isEmpty() ? "You" : nickname) + " (you)");
-                    } else {
-                        String nm = peerNames.get(id);
-                        roster.add(nm == null || nm.trim().isEmpty() ? "Guest" : nm);
-                    }
+                    if (!id.isEmpty()) rosterIds.add(id);
                 }
             }
-            if (inCall) {
-                // update header count + list without resetting the timer
-                renderRoster();
-                if (panel.getChildCount() > 0 && panel.getChildAt(0) instanceof TextView) {
-                    ((TextView) panel.getChildAt(0)).setText(callConnected
-                            ? "🟢  In call  ·  " + roster.size()
-                            : "🟡  In room");
-                }
-            }
+            rebuildRoster();
         }});
     }
 
     @Override public void onVoiceRosterNames(final String namesJson) {
         act.runOnUiThread(new Runnable() { public void run() {
-            if (namesJson == null || namesJson.isEmpty()) return;
-            try {
-                org.json.JSONObject o = new org.json.JSONObject(namesJson);
-                java.util.Iterator<String> it = o.keys();
-                while (it.hasNext()) {
-                    String id = it.next();
-                    peerNames.put(id, o.optString(id, ""));
-                }
-            } catch (Throwable ignored) {}
+            if (namesJson != null && !namesJson.isEmpty()) {
+                try {
+                    org.json.JSONObject o = new org.json.JSONObject(namesJson);
+                    java.util.Iterator<String> it = o.keys();
+                    while (it.hasNext()) {
+                        String id = it.next();
+                        peerNames.put(id, o.optString(id, ""));
+                    }
+                } catch (Throwable ignored) {}
+            }
+            // Names usually arrive just AFTER the roster ids, so rebuild the
+            // display here too — otherwise a peer stays "Guest" until the next
+            // roster event (which may never come once the roster is stable).
+            rebuildRoster();
         }});
+    }
+
+    /** Recompute display names from the raw ids + the latest name map, and refresh
+     *  the list/header without resetting the call timer. */
+    private void rebuildRoster() {
+        roster.clear();
+        if (rosterIds.isEmpty()) {
+            roster.add((nickname == null || nickname.isEmpty() ? "You" : nickname) + " (you)");
+        } else {
+            for (String id : rosterIds) {
+                if (id.equals(clientId)) {
+                    roster.add((nickname == null || nickname.isEmpty() ? "You" : nickname) + " (you)");
+                } else {
+                    String nm = peerNames.get(id);
+                    roster.add(nm == null || nm.trim().isEmpty() ? "Guest" : nm);
+                }
+            }
+        }
+        if (inCall) {
+            renderRoster();
+            if (panel.getChildCount() > 0 && panel.getChildAt(0) instanceof TextView) {
+                ((TextView) panel.getChildAt(0)).setText(callConnected
+                        ? "🟢  In call  ·  " + roster.size()
+                        : "🟡  In room");
+            }
+        }
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
