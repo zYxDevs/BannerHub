@@ -2,7 +2,6 @@ package com.xj.winemu.sidebar;
 
 import android.app.Activity;
 import android.content.Intent;
-import android.graphics.PixelFormat;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.SystemClock;
@@ -12,9 +11,10 @@ import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
+import android.view.Window;
 import android.widget.Chronometer;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -86,8 +86,7 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     private final String nickname;
     private final String clientId;
 
-    private WindowManager wm;
-    private WindowManager.LayoutParams lp;
+    private ViewGroup decor;          // the activity DecorView we attach into
     private LinearLayout container;   // [panel][pill]
     private TextView pill;
     private LinearLayout panel;
@@ -118,8 +117,15 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     }
 
     // ── attach / detach ──────────────────────────────────────────────────────
+    // Attach into the activity's DecorView (same proven path as BhHudInjector),
+    // NOT a separate WindowManager window. On the 5.3.5 :wine WineActivity a
+    // TYPE_APPLICATION_PANEL window does not render over the Wine surface, but
+    // DecorView child views (the HUD) do.
     private void attachInternal() {
-        wm = act.getWindowManager();
+        Window win = act.getWindow();
+        decor = win != null ? (ViewGroup) win.getDecorView() : null;
+        if (decor == null) { Log.w(TAG, "voice pill: no decor view"); return; }
+
         container = new LinearLayout(act);
         container.setOrientation(LinearLayout.HORIZONTAL);
         container.setGravity(Gravity.CENTER_VERTICAL);
@@ -130,28 +136,24 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
         container.addView(panel);
         container.addView(pill);
 
-        lp = new WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                        | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                PixelFormat.TRANSLUCENT);
-        lp.gravity = Gravity.TOP | Gravity.END;
-        lp.y = BhVoicePrefs.getPillY(act, dp(180));
+        FrameLayout.LayoutParams flp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        flp.gravity = Gravity.TOP | Gravity.END;
+        flp.topMargin = BhVoicePrefs.getPillY(act, dp(180));
+        container.setLayoutParams(flp);
         try {
-            wm.addView(container, lp);
+            decor.addView(container);
             attached = true;
-            Log.i(TAG, "voice pill attached (y=" + lp.y + ")");
+            Log.i(TAG, "voice pill attached to decor (y=" + flp.topMargin + ")");
         } catch (Throwable t) {
-            Log.w(TAG, "voice pill addView failed", t);
+            Log.w(TAG, "voice pill addView(decor) failed", t);
         }
     }
 
     private void cleanup() {
         if (controller != null) { try { controller.hangup(); } catch (Throwable ignored) {} controller = null; }
-        if (attached && wm != null && container != null) {
-            try { wm.removeView(container); } catch (Throwable ignored) {}
+        if (attached && decor != null && container != null) {
+            try { decor.removeView(container); } catch (Throwable ignored) {}
         }
         attached = false;
     }
@@ -465,25 +467,26 @@ public final class BhVoiceOverlay implements BhVoiceController.Host {
     // Drag the pill vertically along the right edge; a tap toggles the panel.
     private final class PillTouch implements View.OnTouchListener {
         private float startRawY;
-        private int startY;
+        private int startMargin;
         private boolean dragged;
 
         @Override public boolean onTouch(View v, MotionEvent e) {
+            FrameLayout.LayoutParams flp = (FrameLayout.LayoutParams) container.getLayoutParams();
             switch (e.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     startRawY = e.getRawY();
-                    startY = lp.y;
+                    startMargin = flp.topMargin;
                     dragged = false;
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     int dy = (int) (e.getRawY() - startRawY);
                     if (Math.abs(dy) > dp(6)) dragged = true;
-                    lp.y = startY + dy;
-                    try { wm.updateViewLayout(container, lp); } catch (Throwable ignored) {}
+                    flp.topMargin = Math.max(0, startMargin + dy);
+                    container.setLayoutParams(flp);
                     return true;
                 case MotionEvent.ACTION_UP:
                     if (dragged) {
-                        BhVoicePrefs.setPillY(act, lp.y);
+                        BhVoicePrefs.setPillY(act, flp.topMargin);
                     } else {
                         togglePanel();
                     }

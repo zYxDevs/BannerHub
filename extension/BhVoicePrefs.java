@@ -1,6 +1,7 @@
 package com.xj.winemu.sidebar;
 
 import android.content.Context;
+import android.os.Environment;
 import android.util.Log;
 
 import java.io.File;
@@ -64,8 +65,19 @@ public final class BhVoicePrefs {
         finally { if (out != null) try { out.close(); } catch (Throwable ignored) {} }
     }
 
-    /** Stable per-device client id; generated once and persisted. */
+    /** Stable per-device client id. Stored in PUBLIC storage
+     *  ({@code /sdcard/BannerHub/voice_id.txt}) so it survives uninstall / clear
+     *  data / APK swaps — which is what previously orphaned a claimed nickname.
+     *  Falls back to the app-private file if public storage isn't writable. */
     public static String clientId(Context ctx) {
+        // 1. Public storage wins — survives reinstall on this device.
+        String pub = readPublicId();
+        if (!pub.isEmpty()) {
+            Properties p = load(ctx);
+            if (!pub.equals(p.getProperty(KEY_CLIENT, ""))) { p.setProperty(KEY_CLIENT, pub); save(ctx, p); }
+            return pub;
+        }
+        // 2. App-private file (may carry an id from a prior build).
         Properties p = load(ctx);
         String id = p.getProperty(KEY_CLIENT, "");
         if (id.isEmpty()) {
@@ -73,7 +85,37 @@ public final class BhVoicePrefs {
             p.setProperty(KEY_CLIENT, id);
             save(ctx, p);
         }
+        // 3. Promote to public storage so it persists across future reinstalls.
+        writePublicId(id);
         return id;
+    }
+
+    private static File publicIdFile() {
+        return new File(new File(Environment.getExternalStorageDirectory(), "BannerHub"), "voice_id.txt");
+    }
+
+    private static String readPublicId() {
+        FileInputStream in = null;
+        try {
+            File f = publicIdFile();
+            if (!f.exists()) return "";
+            in = new FileInputStream(f);
+            byte[] buf = new byte[64];
+            int n = in.read(buf);
+            return n > 0 ? new String(buf, 0, n, "UTF-8").trim() : "";
+        } catch (Throwable t) { return ""; }
+        finally { if (in != null) try { in.close(); } catch (Throwable ignored) {} }
+    }
+
+    private static void writePublicId(String id) {
+        FileOutputStream out = null;
+        try {
+            File dir = new File(Environment.getExternalStorageDirectory(), "BannerHub");
+            if (!dir.exists()) dir.mkdirs();
+            out = new FileOutputStream(new File(dir, "voice_id.txt"));
+            out.write(id.getBytes("UTF-8"));
+        } catch (Throwable t) { Log.w(TAG, "voice public id write failed", t); }
+        finally { if (out != null) try { out.close(); } catch (Throwable ignored) {} }
     }
 
     public static String nickname(Context ctx) {

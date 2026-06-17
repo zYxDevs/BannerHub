@@ -3,11 +3,11 @@ package com.xj.winemu.sidebar;
 import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.PackageInfo;
-import android.graphics.PixelFormat;
 import android.net.Uri;
 import android.util.Log;
-import android.view.Gravity;
-import android.view.WindowManager;
+import android.view.ViewGroup;
+import android.view.Window;
+import android.widget.FrameLayout;
 import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
@@ -70,6 +70,7 @@ public final class BhVoiceController {
     private final String nickname;  // user-chosen display name
     private final Host host;
     private WebView web;
+    private ViewGroup webDecor;
     private boolean webAttached;
     private boolean muted;
     private volatile boolean ended;
@@ -182,23 +183,17 @@ public final class BhVoiceController {
         cleanup();
     }
 
-    /** Add the WebView to the window as a 1×1, transparent, non-interactive panel
-     *  so Chromium treats the page as foreground and mic capture can resolve.
-     *  Same WindowManager technique as the pill overlay. UI thread. */
+    /** Add the WebView to the activity DecorView as a 1×1 view so Chromium treats
+     *  the page as foreground and mic capture can resolve. Uses DecorView (the
+     *  proven overlay path on the 5.3.5 :wine WineActivity) rather than a separate
+     *  TYPE_APPLICATION_PANEL window, which doesn't render over the Wine surface
+     *  on this base. UI thread. */
     private void attachHeadless() {
         try {
-            WindowManager wm = act.getWindowManager();
-            WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                    1, 1,
-                    WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                            | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-                            | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
-                    PixelFormat.TRANSLUCENT);
-            lp.gravity = Gravity.TOP | Gravity.START;
-            lp.x = 0;
-            lp.y = 0;
-            wm.addView(web, lp);
+            Window win = act.getWindow();
+            webDecor = win != null ? (ViewGroup) win.getDecorView() : null;
+            if (webDecor == null) { Log.w(TAG, "voice webview: no decor view"); return; }
+            webDecor.addView(web, new FrameLayout.LayoutParams(1, 1));
             webAttached = true;
         } catch (Throwable t) {
             Log.w(TAG, "voice webview attach failed", t);
@@ -209,12 +204,14 @@ public final class BhVoiceController {
         ended = true;
         final WebView w = web;
         final boolean wasAttached = webAttached;
+        final ViewGroup d = webDecor;
         web = null;
+        webDecor = null;
         webAttached = false;
         if (w == null) return;
         act.runOnUiThread(new Runnable() { public void run() {
-            if (wasAttached) {
-                try { act.getWindowManager().removeView(w); } catch (Throwable ignored) {}
+            if (wasAttached && d != null) {
+                try { d.removeView(w); } catch (Throwable ignored) {}
             }
             try { w.loadUrl("about:blank"); w.removeAllViews(); w.destroy(); } catch (Throwable ignored) {}
         }});

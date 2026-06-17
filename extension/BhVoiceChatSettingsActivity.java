@@ -190,6 +190,54 @@ public class BhVoiceChatSettingsActivity extends Activity {
         status.setLayoutParams(stLp);
         root.addView(status);
 
+        // ── recovery row: Reclaim (force) + Release ────────────────────────
+        LinearLayout recRow = new LinearLayout(this);
+        recRow.setOrientation(LinearLayout.HORIZONTAL);
+        LinearLayout.LayoutParams rrLp = new LinearLayout.LayoutParams(-1, -2);
+        rrLp.topMargin = dp(12);
+        recRow.setLayoutParams(rrLp);
+
+        Button reclaim = new Button(this);
+        reclaim.setText("Reclaim");
+        reclaim.setAllCaps(false);
+        reclaim.setTextColor(Color.WHITE);
+        GradientDrawable rbg = new GradientDrawable();
+        rbg.setColor(0xFF6A4BC0);
+        rbg.setCornerRadius(dp(8));
+        reclaim.setBackground(rbg);
+        reclaim.setLayoutParams(new LinearLayout.LayoutParams(0, -2, 1f));
+        reclaim.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { doReclaim(); }
+        });
+        recRow.addView(reclaim);
+
+        Button release = new Button(this);
+        release.setText("Release");
+        release.setAllCaps(false);
+        release.setTextColor(Color.WHITE);
+        GradientDrawable relBg = new GradientDrawable();
+        relBg.setColor(0xFF3A4250);
+        relBg.setCornerRadius(dp(8));
+        release.setBackground(relBg);
+        LinearLayout.LayoutParams relLp = new LinearLayout.LayoutParams(0, -2, 1f);
+        relLp.leftMargin = dp(8);
+        release.setLayoutParams(relLp);
+        release.setOnClickListener(new View.OnClickListener() {
+            public void onClick(View v) { doRelease(); }
+        });
+        recRow.addView(release);
+        root.addView(recRow);
+
+        TextView recHint = new TextView(this);
+        recHint.setText("Reclaim = take a name back if it shows \"taken\" but it's actually yours "
+                + "(e.g. after a reinstall). Release = free your name, e.g. before switching devices.");
+        recHint.setTextColor(0xFF6B7280);
+        recHint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        LinearLayout.LayoutParams rhLp = new LinearLayout.LayoutParams(-1, -2);
+        rhLp.topMargin = dp(4);
+        recHint.setLayoutParams(rhLp);
+        root.addView(recHint);
+
         // ── Activation checkbox (gated) ────────────────────────────────────
         activate = new CheckBox(this);
         activate.setText("Activate in-game voice pill");
@@ -314,6 +362,72 @@ public class BhVoiceChatSettingsActivity extends Activity {
                     setStatus("taken".equals(r)
                             ? "\"" + name + "\" was just taken by someone else — pick another."
                             : "Couldn't reserve the name. Try again.", 0xFFE08A8A);
+                }
+            }});
+        }}).start();
+    }
+
+    /** Force-rebind the name to THIS device's client id — recovery for "it says
+     *  taken but it's mine" (lost client id after a reinstall/new device). */
+    private void doReclaim() {
+        final String name = nickField.getText().toString().trim();
+        String err = validName(name);
+        if (err != null) { setStatus(err, 0xFFE08A8A); return; }
+        setStatus("Reclaiming \"" + name + "\"…", 0xFFB7BDC8);
+        final String self = BhVoicePrefs.clientId(this);
+        new Thread(new Runnable() { public void run() {
+            String result;
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("name", name);
+                payload.put("self", self);
+                payload.put("force", true);
+                String body = httpPostJson(BhVoicePrefs.WORKER + "/voice/nick/claim", payload.toString());
+                result = new JSONObject(body).optString("status", "error");
+            } catch (Throwable t) { result = "neterror"; }
+            final String r = result;
+            runOnUiThread(new Runnable() { public void run() {
+                if ("reclaimed".equals(r) || "ok".equals(r) || "yours".equals(r)) {
+                    BhVoicePrefs.setNickname(BhVoiceChatSettingsActivity.this, name);
+                    BhVoicePrefs.setActivated(BhVoiceChatSettingsActivity.this, true);
+                    availableConfirmed = true;
+                    refreshActivateState();
+                    activate.setChecked(true); // programmatic; listener ignores (not pressed)
+                    setStatus("Reclaimed — it's yours and the voice pill is on.", 0xFF6FCF6F);
+                } else {
+                    setStatus("invalid".equals(r) ? "Invalid nickname." : "Couldn't reclaim. Check your connection and try again.", 0xFFE08A8A);
+                }
+            }});
+        }}).start();
+    }
+
+    /** Voluntarily free the name this device owns (e.g. before switching devices). */
+    private void doRelease() {
+        final String name = nickField.getText().toString().trim();
+        if (name.isEmpty()) { setStatus("Enter the nickname to release.", 0xFFE08A8A); return; }
+        setStatus("Releasing \"" + name + "\"…", 0xFFB7BDC8);
+        final String self = BhVoicePrefs.clientId(this);
+        new Thread(new Runnable() { public void run() {
+            String result;
+            try {
+                JSONObject payload = new JSONObject();
+                payload.put("name", name);
+                payload.put("self", self);
+                String body = httpPostJson(BhVoicePrefs.WORKER + "/voice/nick/release", payload.toString());
+                result = new JSONObject(body).optString("status", "error");
+            } catch (Throwable t) { result = "neterror"; }
+            final String r = result;
+            runOnUiThread(new Runnable() { public void run() {
+                if ("released".equals(r) || "free".equals(r)) {
+                    BhVoicePrefs.setActivated(BhVoiceChatSettingsActivity.this, false);
+                    availableConfirmed = false;
+                    if (activate.isChecked()) activate.setChecked(false);
+                    refreshActivateState();
+                    setStatus("Released. The name is free again and the pill is off.", 0xFFB7BDC8);
+                } else if ("not_yours".equals(r)) {
+                    setStatus("This device doesn't hold that name — use Reclaim if it's yours.", 0xFFE08A8A);
+                } else {
+                    setStatus("Couldn't release. Try again.", 0xFFE08A8A);
                 }
             }});
         }}).start();
