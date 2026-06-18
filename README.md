@@ -11,10 +11,10 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/The412Banner/BannerHub/releases/latest"><strong>📥 Latest stable: v3.7.5</strong></a>
+  <a href="https://github.com/The412Banner/BannerHub/releases/latest"><strong>📥 Latest stable: v3.8.0</strong></a>
 </p>
 
-**GameHub 5.3.5 ReVanced** — extended with GOG Games, Amazon Games, and Epic Games Store library tabs, a full Component Manager, in-app component downloader, background download service with in-app cross-store download manager, SD card / external storage routing for store game downloads, Winlator HUD overlay (Normal + Extra Detailed + Konkr style with CPU/GPU/RAM/SWAP/temp/per-core metrics), in-game performance toggles, RTS touch controls, VRAM unlock, per-game CPU core affinity, root access management, offline Steam launch, community game configs browser, per-game config export/import with Frontend Export, Japanese locale, and more. Built entirely with apktool smali patching — no source code, no external library injection.
+**GameHub 5.3.5 ReVanced** — extended with GOG Games, Amazon Games, and Epic Games Store library tabs, a full Component Manager, in-app component downloader, background download service with in-app cross-store download manager, SD card / external storage routing for store game downloads, Winlator HUD overlay (Normal + Extra Detailed + Konkr style with CPU/GPU/RAM/SWAP/temp/per-core metrics), in-game performance toggles, RTS touch controls, VRAM unlock, per-game CPU core affinity, root access management, offline Steam launch, community game configs browser, per-game config export/import with Frontend Export, Japanese locale, in-game voice chat (room-based, no Steam required, cross-compatible with BannerHub v6), per-game PC audio settings (recording-compatible mode), and more. Built entirely with apktool smali patching — no source code, no external library injection.
 
 ## AI Disclaimer
 
@@ -49,6 +49,8 @@ Before any stable release is published, all changes are manually debugged and te
   - [AI Frame Generation Menu](#ai-frame-generation-menu)
   - [RTS Touch Controls](#rts-touch-controls)
   - [PC Vibration / Rumble](#pc-vibration--rumble)
+  - [PC Audio Settings](#pc-audio-settings)
+  - [In-Game Voice Chat](#in-game-voice-chat)
   - [VRAM Limit Unlock](#vram-limit-unlock)
   - [Community Game Configs](#community-game-configs)
   - [Per-Game Config Export / Import](#per-game-config-export--import)
@@ -568,6 +570,38 @@ Settings live in the stock `pc_g_setting<gameId>` SharedPreferences under `bh_vi
 - **Native-XInput controllers need Bluetooth, not USB.** DualSense and DS4 rumble fine over both. Xbox-style pads and 8BitDo controllers in XInput mode rumble over Bluetooth but NOT over USB — Android's USB-HID driver for XInput devices doesn't expose the rumble feature report path.
 - **Tested setups:** Samsung devices with DualSense (Sony HID), DualShock 4 (Sony HID), and 8BitDo Pro 2 (XInput mode) across single, dual, and triple-controller configurations.
 - **x86_64 / Box64 safe (v3.7.4).** Earlier builds (v3.7.0–v3.7.3) loaded `libevshim.so` into Wine via LD_PRELOAD; on Box64 this corrupted the dynarec and made x86_64 game launches die at startup (`c000007b` / `wine has died`). v3.7.4 removes the preloaded library entirely — x86_64 / Box64 titles now launch normally with rumble intact. arm64 / FEX containers were never affected.
+
+---
+
+### PC Audio Settings
+
+*New in v3.8.0.* A per-game **PC Audio Settings** entry in each game's popup options menu, right after **PC Vibration Settings**.
+
+Stock GameHub loads `module-aaudio-sink` with no performance-mode argument, so PulseAudio opens a `LOW_LATENCY` AAudio stream the framework can grant as exclusive MMAP — which **bypasses the AudioFlinger mixer that screen recorders tap** (MediaProjection's `AudioPlaybackCapture`). The result: Android screen recordings capture video but **no game audio** whenever the in-game audio driver is PulseAudio. (ALSA uses a legacy mixed `AudioTrack` and records fine.)
+
+| Setting | Options |
+|---------|---------|
+| PulseAudio mode | Low latency (default) / Recording-compatible |
+
+**Recording-compatible** routes the `default.pa` sink line through the extension, appending `pm=0` — the module computes `setPerformanceMode(pm + 10)`, so `0` → `PERFORMANCE_MODE_NONE` → the stream stays on the mixer and screen recordings capture in-game sound. The active game's `gameId` is resolved from the live `WineActivity`'s `WineActivityData` field (the 5.3.5 launch intent carries no `gameId` extra). Settings live in the stock `pc_g_setting<gameId>` SharedPreferences, so the existing **Export / Import Config** flow carries them automatically.
+
+---
+
+### In-Game Voice Chat
+
+*New in v3.8.0.* A built-in **voice chat** overlay you can use while in a game — **no Steam, no root, no extra app**. Identity is a **user-chosen nickname** plus a stable per-install client id; there are no friends lists and no ringing — it's a **room model**: Create or Join a room by a short code, or share a join link.
+
+#### Two-gate activation
+
+A new **Voice Chat** item appears in the dashboard side menu under **Game Configs** → opens a settings screen with a **nickname** field + **Check availability**. An **Activate** toggle stays disabled until the name is confirmed free; ticking it claims the name and turns the in-game pill on. The pill only attaches in-game once a nickname is claimed **and** activated.
+
+#### In-game
+
+A draggable edge **pill** opens a room box that shows the live **roster** (everyone's nickname), a call **timer**, and **Mute** / **Leave**; the pill stays pinned to the edge while the box drags freely, with a collapsible **opacity** slider. The mic is requested at runtime on activation.
+
+#### Cross-play with BannerHub v6
+
+Voice rides the **same WebRTC mesh** served from the BannerHub Cloudflare Worker (with Cloudflare Realtime TURN for strict NATs) that BannerHub v6 uses — so a **BannerHub user and a BannerHub v6 user can share the same room and talk**, in either direction. Rooms are identity-agnostic (any two clients on the same room code connect), and room codes use the same format on both builds. **Device-confirmed both ways across different networks.**
 
 ---
 
